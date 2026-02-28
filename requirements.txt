@@ -1,0 +1,5 @@
+# Создай файл requirements.txt
+torch>=2.0.0
+torchaudio>=2.0.0
+aiogram==3.4.1
+soundfile>=0.12.0
