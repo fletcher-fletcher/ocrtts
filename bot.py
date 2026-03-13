@@ -1,4 +1,4 @@
-from gtts import gTTS
+import edge_tts
 import os
 import tempfile
 import subprocess
@@ -24,7 +24,6 @@ API_TOKEN = '8627063543:AAHvc33DfNFjcVT--sKfgHsCVyemY72fQ7Q'
 
 # Путь к Tesseract (нужно установить!)
 TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"  # Для Windows
-# Для Linux обычно: /usr/bin/tesseract
 
 # Устанавливаем путь к Tesseract
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
@@ -41,8 +40,64 @@ FFMPEG_PATH = r"C:\Users\anton\Downloads\dobro_loader\dobro_loader\bin\ffmpeg.ex
 class BotStates(StatesGroup):
     choosing_mode = State()  # Выбор режима (озвучка/распознавание)
     tts_mode = State()       # Режим озвучки текста
+    tts_settings = State()   # Настройки озвучки
     ocr_mode = State()       # Режим распознавания текста с фото
-    ocr_language = State()   # Выбор языка для OCR
+    ocr_settings = State()   # Настройки OCR
+    choosing_voice = State() # Выбор голоса
+    choosing_accent = State() # Выбор акцента
+    choosing_speed = State()  # Выбор скорости
+    choosing_format = State() # Выбор формата
+
+# АКТУАЛЬНЫЙ СПИСОК ГОЛОСОВ
+VOICES = {
+    'us': {
+        'name': '🇺🇸 Американский английский',
+        'voices': [
+            {'id': 'en-US-AnaNeural', 'name': '👩 Ана', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-US-AndrewMultilingualNeural', 'name': '👨 Эндрю (мультиязычный)', 'gender': 'male', 'style': 'мультиязычный'},
+            {'id': 'en-US-AndrewNeural', 'name': '👨 Эндрю', 'gender': 'male', 'style': 'нейтральный'},
+            {'id': 'en-US-AriaNeural', 'name': '👩 Ария', 'gender': 'female', 'style': 'эмоциональный'},
+            {'id': 'en-US-AvaMultilingualNeural', 'name': '👩 Ава (мультиязычный)', 'gender': 'female', 'style': 'мультиязычный'},
+            {'id': 'en-US-AvaNeural', 'name': '👩 Ава', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-US-BrianMultilingualNeural', 'name': '👨 Брайан (мультиязычный)', 'gender': 'male', 'style': 'мультиязычный'},
+            {'id': 'en-US-BrianNeural', 'name': '👨 Брайан', 'gender': 'male', 'style': 'нейтральный'},
+            {'id': 'en-US-ChristopherNeural', 'name': '👨 Кристофер', 'gender': 'male', 'style': 'нейтральный'},
+            {'id': 'en-US-EmmaMultilingualNeural', 'name': '👩 Эмма (мультиязычный)', 'gender': 'female', 'style': 'мультиязычный'},
+            {'id': 'en-US-EmmaNeural', 'name': '👩 Эмма', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-US-EricNeural', 'name': '👨 Эрик', 'gender': 'male', 'style': 'нейтральный'},
+            {'id': 'en-US-GuyNeural', 'name': '👨 Гай', 'gender': 'male', 'style': 'нейтральный'},
+            {'id': 'en-US-JennyNeural', 'name': '👩 Дженни', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-US-MichelleNeural', 'name': '👩 Мишель', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-US-RogerNeural', 'name': '👨 Роджер', 'gender': 'male', 'style': 'нейтральный'},
+            {'id': 'en-US-SteffanNeural', 'name': '👨 Стефан', 'gender': 'male', 'style': 'нейтральный'},
+        ]
+    },
+    'uk': {
+        'name': '🇬🇧 Британский английский',
+        'voices': [
+            {'id': 'en-GB-LibbyNeural', 'name': '👩 Либби', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-GB-MaisieNeural', 'name': '👩 Мэйзи', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-GB-RyanNeural', 'name': '👨 Райан', 'gender': 'male', 'style': 'нейтральный'},
+            {'id': 'en-GB-SoniaNeural', 'name': '👩 Соня', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-GB-ThomasNeural', 'name': '👨 Томас', 'gender': 'male', 'style': 'нейтральный'},
+        ]
+    },
+    'in': {
+        'name': '🇮🇳 Индийский английский',
+        'voices': [
+            {'id': 'en-IN-NeerjaExpressiveNeural', 'name': '👩 Нирджа (экспрессивный)', 'gender': 'female', 'style': 'экспрессивный'},
+            {'id': 'en-IN-NeerjaNeural', 'name': '👩 Нирджа', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-IN-PrabhatNeural', 'name': '👨 Прабат', 'gender': 'male', 'style': 'нейтральный'},
+        ]
+    },
+    'au': {
+        'name': '🇦🇺 Австралийский английский',
+        'voices': [
+            {'id': 'en-AU-NatashaNeural', 'name': '👩 Наташа', 'gender': 'female', 'style': 'нейтральный'},
+            {'id': 'en-AU-WilliamNeural', 'name': '👨 Уильям', 'gender': 'male', 'style': 'нейтральный'},
+        ]
+    }
+}
 
 # ДОСТУПНЫЕ АКЦЕНТЫ
 ACCENTS = {
@@ -50,19 +105,29 @@ ACCENTS = {
         'tld': 'us',
         'name': '🇺🇸 Американский',
         'flag': '🇺🇸',
-        'description': 'Американский английский'
+        'description': 'Американский английский',
+        'default_voice': 'en-US-JennyNeural'
     },
     'uk': {
         'tld': 'co.uk',
         'name': '🇬🇧 Британский',
         'flag': '🇬🇧',
-        'description': 'Британский английский'
+        'description': 'Британский английский',
+        'default_voice': 'en-GB-SoniaNeural'
     },
     'in': {
         'tld': 'co.in',
         'name': '🇮🇳 Индийский',
         'flag': '🇮🇳',
-        'description': 'Индийский английский'
+        'description': 'Индийский английский',
+        'default_voice': 'en-IN-NeerjaNeural'
+    },
+    'au': {
+        'tld': 'com.au',
+        'name': '🇦🇺 Австралийский',
+        'flag': '🇦🇺',
+        'description': 'Австралийский английский',
+        'default_voice': 'en-AU-NatashaNeural'
     }
 }
 
@@ -92,7 +157,7 @@ AUDIO_FORMATS = {
         'name': '🎤 Голосовое сообщение',
         'extension': '.ogg',
         'mime': 'audio/ogg',
-        'description': 'Стандартное голосовое сообщение Telegram (OPUS)'
+        'description': 'Стандартное голосовое сообщение Telegram'
     },
     'mp3': {
         'type': 'audio',
@@ -106,38 +171,32 @@ AUDIO_FORMATS = {
         'name': '🎼 OPUS аудио',
         'extension': '.opus',
         'mime': 'audio/opus',
-        'description': 'Аудиофайл в формате OPUS (высокое качество)'
+        'description': 'Аудиофайл в формате OPUS'
     },
     'wav': {
         'type': 'audio',
         'name': '🔊 WAV аудио',
         'extension': '.wav',
         'mime': 'audio/wav',
-        'description': 'Аудиофайл без сжатия (качественный, большой)'
+        'description': 'Аудиофайл без сжатия'
     },
     'aac': {
         'type': 'audio',
         'name': '🎧 AAC аудио',
         'extension': '.aac',
         'mime': 'audio/aac',
-        'description': 'Современный формат с хорошим сжатием'
+        'description': 'Современный формат'
     }
 }
 
 # Скорости речи
-# Скорости речи с шагом 0.1 (сгруппированные)
 SPEED_OPTIONS = {
-    # Медленные (0.5 - 0.9)
     '0.5': {'name': '🐢 0.5x (очень медленно)', 'factor': '0.5', 'group': 'slow'},
     '0.6': {'name': '🐢 0.6x', 'factor': '0.6', 'group': 'slow'},
     '0.7': {'name': '🐢 0.7x', 'factor': '0.7', 'group': 'slow'},
     '0.8': {'name': '🐢 0.8x', 'factor': '0.8', 'group': 'slow'},
     '0.9': {'name': '🐢 0.9x', 'factor': '0.9', 'group': 'slow'},
-    
-    # Нормальная
     '1.0': {'name': '⏺️ 1.0x (нормально)', 'factor': '1.0', 'group': 'normal'},
-    
-    # Быстрые (1.1 - 2.0)
     '1.1': {'name': '⚡ 1.1x', 'factor': '1.1', 'group': 'fast'},
     '1.2': {'name': '⚡ 1.2x', 'factor': '1.2', 'group': 'fast'},
     '1.3': {'name': '⚡ 1.3x', 'factor': '1.3', 'group': 'fast'},
@@ -152,6 +211,53 @@ SPEED_OPTIONS = {
 
 # Хранилище настроек пользователей
 user_settings = {}
+
+# Вспомогательная функция для получения настроек с значениями по умолчанию
+def get_user_settings(user_id: int) -> dict:
+    """Возвращает настройки пользователя со значениями по умолчанию"""
+    if user_id not in user_settings:
+        user_settings[user_id] = {}
+    
+    settings = user_settings[user_id]
+    
+    # Акцент по умолчанию
+    if 'accent' not in settings:
+        settings['accent'] = 'us'
+    
+    # Голос по умолчанию для акцента
+    accent_code = settings['accent']
+    default_voice = ACCENTS.get(accent_code, ACCENTS['us'])['default_voice']
+    if 'voice' not in settings:
+        settings['voice'] = default_voice
+    
+    # Скорость по умолчанию (1.0)
+    if 'speed' not in settings:
+        settings['speed'] = '1.0'
+    
+    # Формат по умолчанию (voice)
+    if 'format' not in settings:
+        settings['format'] = 'voice'
+    
+    # Язык OCR по умолчанию
+    if 'ocr_lang' not in settings:
+        settings['ocr_lang'] = 'eng'
+    
+    return settings
+
+# Функция для создания клавиатуры навигации
+def get_navigation_keyboard(back_callback: str = "back_to_tts", show_main_menu: bool = True) -> InlineKeyboardMarkup:
+    """Создает клавиатуру навигации"""
+    keyboard = []
+    
+    # Кнопка "Назад"
+    if back_callback:
+        keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data=back_callback)])
+    
+    # Кнопка "Главное меню"
+    if show_main_menu:
+        keyboard.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def check_ffmpeg():
     """Проверяет наличие ffmpeg"""
@@ -227,33 +333,27 @@ def convert_audio(input_file: str, output_format: str, speed_factor: str = '1.0'
     
     return input_file
 
-def generate_speech(text: str, tld: str = 'us', speed: str = '1.0') -> str:
-    """Генерирует речь"""
+async def generate_speech_edge(text: str, voice: str, speed: str = '1.0') -> str:
+    """Генерирует речь через Edge TTS (Microsoft) с выбранным голосом"""
     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as fp:
         filename = fp.name
     
     try:
-        tts = gTTS(
-            text=text,
-            lang='en',
-            tld=tld,
-            slow=False,
-            lang_check=False
-        )
-        tts.save(filename)
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(filename)
         
-        file_size = os.path.getsize(filename)
-        if file_size < 100:
-            raise Exception(f"Файл слишком мал: {file_size} байт")
+        # Проверяем размер файла
+        if os.path.getsize(filename) < 100:
+            raise Exception("Сгенерированный файл слишком мал")
         
         if speed != '1.0' and check_ffmpeg():
             filename = convert_audio(filename, 'mp3', speed)
         
         return filename
-        
     except Exception as e:
         if os.path.exists(filename):
             os.unlink(filename)
+        logger.error(f"Ошибка в generate_speech_edge: {e}")
         raise e
 
 async def download_file(file_id: str) -> str:
@@ -292,19 +392,85 @@ def ocr_image(image_path: str, lang: str = 'eng') -> str:
         if os.path.exists(image_path):
             os.unlink(image_path)
 
+# Функция для отображения главного меню
+async def show_main_menu(message: types.Message, state: FSMContext):
+    """Показывает главное меню"""
+    await state.set_state(BotStates.choosing_mode)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔊 Озвучить текст", callback_data="mode_tts")],
+        [InlineKeyboardButton(text="📷 Распознать текст с фото", callback_data="mode_ocr")],
+        [InlineKeyboardButton(text="⚙️ Настройки", callback_data="show_settings")]
+    ])
+    
+    await message.answer(
+        "👋 **Главное меню**\n\n"
+        "Выберите режим работы:",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+# Функция для отображения настроек TTS
+async def show_tts_settings(message: types.Message, user_id: int):
+    """Показывает настройки TTS"""
+    settings = get_user_settings(user_id)
+    accent = ACCENTS.get(settings['accent'], ACCENTS['us'])
+    
+    # Находим информацию о текущем голосе
+    current_voice = settings['voice']
+    voice_info = "неизвестно"
+    for accent_code, voice_data in VOICES.items():
+        for v in voice_data['voices']:
+            if v['id'] == current_voice:
+                voice_info = v['name']
+                break
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"{accent['flag']} Акцент: {accent['name']}", callback_data="choose_accent")],
+        [InlineKeyboardButton(text=f"🗣 Голос: {voice_info}", callback_data="choose_voice")],
+        [InlineKeyboardButton(text=f"⚡ Скорость: {SPEED_OPTIONS[settings['speed']]['name']}", callback_data="choose_speed")],
+        [InlineKeyboardButton(text=f"📁 Формат: {AUDIO_FORMATS[settings['format']]['name']}", callback_data="choose_format")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_tts"),
+         InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+    ])
+    
+    await message.answer(
+        f"🔊 **Настройки озвучки**\n\n"
+        f"Текущие параметры:\n"
+        f"• {accent['flag']} Акцент: {accent['description']}\n"
+        f"• 🗣 Голос: {voice_info}\n"
+        f"• ⚡ Скорость: {SPEED_OPTIONS[settings['speed']]['name']}\n"
+        f"• 📁 Формат: {AUDIO_FORMATS[settings['format']]['name']}\n\n"
+        f"👇 **Выберите параметр для изменения:**",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+# Функция для отображения настроек OCR
+async def show_ocr_settings(message: types.Message, user_id: int):
+    """Показывает настройки OCR"""
+    settings = get_user_settings(user_id)
+    ocr_lang = OCR_LANGUAGES.get(settings['ocr_lang'], OCR_LANGUAGES['eng'])
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"🔤 Язык: {ocr_lang['name']}", callback_data="choose_ocr_lang")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_ocr"),
+         InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+    ])
+    
+    await message.answer(
+        f"📷 **Настройки распознавания текста**\n\n"
+        f"Текущий язык: {ocr_lang['name']}\n\n"
+        f"👇 **Выберите параметр для изменения:**",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
 @dp.message(Command('start'))
 async def cmd_start(message: types.Message, state: FSMContext):
     """Обработчик команды /start"""
     user_id = message.from_user.id
-    
-    # Настройки по умолчанию
-    if user_id not in user_settings:
-        user_settings[user_id] = {
-            'accent': 'us',
-            'speed': '1.0',
-            'format': 'voice',
-            'ocr_lang': 'eng'
-        }
+    get_user_settings(user_id)  # Инициализируем настройки
     
     # Проверяем наличие компонентов
     ffmpeg_ok = check_ffmpeg()
@@ -330,14 +496,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         "👇 **Выберите режим работы:**"
     )
     
-    # Клавиатура выбора режима
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔊 Озвучить текст", callback_data="mode_tts")],
-        [InlineKeyboardButton(text="📷 Распознать текст с фото", callback_data="mode_ocr")]
-    ])
-    
-    await state.set_state(BotStates.choosing_mode)
-    await message.answer(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
+    await show_main_menu(message, state)
 
 @dp.callback_query(lambda c: c.data == "mode_tts")
 async def process_tts_mode(callback: types.CallbackQuery, state: FSMContext):
@@ -345,36 +504,57 @@ async def process_tts_mode(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(BotStates.tts_mode)
     
     user_id = callback.from_user.id
-    settings = user_settings.get(user_id, {})
-    accent = ACCENTS.get(settings.get('accent', 'us'), ACCENTS['us'])
+    settings = get_user_settings(user_id)
+    accent = ACCENTS[settings['accent']]
+    
+    # Находим информацию о текущем голосе
+    current_voice = settings['voice']
+    voice_info = "неизвестно"
+    for accent_code, voice_data in VOICES.items():
+        for v in voice_data['voices']:
+            if v['id'] == current_voice:
+                voice_info = v['name']
+                break
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚙️ Настройки озвучки", callback_data="tts_settings")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+    ])
     
     await callback.message.edit_text(
         f"🔊 **Режим озвучки текста**\n\n"
         f"Текущие настройки:\n"
         f"• Акцент: {accent['flag']} {accent['description']}\n"
-        f"• Скорость: {SPEED_OPTIONS[settings.get('speed', '1.0')]['name']}\n"
-        f"• Формат: {AUDIO_FORMATS[settings.get('format', 'voice')]['name']}\n\n"
-        f"📝 Отправьте текст на английском, и я пришлю аудио.\n\n"
-        f"⚙️ Для изменения настроек используйте команды:\n"
-        f"/accent - выбрать акцент\n"
-        f"/speed - настроить скорость\n"
-        f"/format - выбрать формат\n"
-        f"/menu - вернуться в главное меню",
+        f"• Голос: {voice_info}\n"
+        f"• Скорость: {SPEED_OPTIONS[settings['speed']]['name']}\n"
+        f"• Формат: {AUDIO_FORMATS[settings['format']]['name']}\n\n"
+        f"📝 **Отправьте текст для озвучки**\n\n"
+        f"👇 **Или настройте параметры:**",
+        reply_markup=keyboard,
         parse_mode="Markdown"
     )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "tts_settings")
+async def show_tts_settings_menu(callback: types.CallbackQuery, state: FSMContext):
+    """Показывает меню настроек TTS"""
+    await state.set_state(BotStates.tts_settings)
+    user_id = callback.from_user.id
+    await show_tts_settings(callback.message, user_id)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "mode_ocr")
 async def process_ocr_mode(callback: types.CallbackQuery, state: FSMContext):
     """Переход в режим OCR"""
     if not check_tesseract():
+        keyboard = get_navigation_keyboard(back_callback="back_to_menu", show_main_menu=False)
         await callback.message.edit_text(
             "❌ **OCR недоступен**\n\n"
             "Tesseract не установлен. Для работы OCR требуется:\n"
             "1. Установить Tesseract с https://github.com/UB-Mannheim/tesseract/wiki\n"
             "2. Установить языковые пакеты\n"
-            "3. Указать правильный путь в коде\n\n"
-            "Пока доступен только режим озвучки /start",
+            "3. Указать правильный путь в коде",
+            reply_markup=keyboard,
             parse_mode="Markdown"
         )
         await callback.answer()
@@ -383,405 +563,387 @@ async def process_ocr_mode(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(BotStates.ocr_mode)
     
     user_id = callback.from_user.id
-    settings = user_settings.get(user_id, {})
-    ocr_lang = OCR_LANGUAGES.get(settings.get('ocr_lang', 'eng'), OCR_LANGUAGES['eng'])
+    settings = get_user_settings(user_id)
+    ocr_lang = OCR_LANGUAGES[settings['ocr_lang']]
     
-    # Клавиатура выбора языка
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-    for lang_code, lang_info in OCR_LANGUAGES.items():
-        marker = "✅ " if lang_code == settings.get('ocr_lang', 'eng') else ""
-        keyboard.inline_keyboard.append([
-            InlineKeyboardButton(
-                text=f"{marker}{lang_info['name']}",
-                callback_data=f"ocr_lang_{lang_code}"
-            )
-        ])
-    keyboard.inline_keyboard.append([
-        InlineKeyboardButton(text="◀️ В меню", callback_data="back_to_menu")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚙️ Настройки OCR", callback_data="ocr_settings")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
     ])
     
     await callback.message.edit_text(
         f"📷 **Режим распознавания текста**\n\n"
         f"Текущий язык: {ocr_lang['name']}\n\n"
-        f"📸 Отправьте фото с текстом, и я распознаю его.\n\n"
-        f"💡 Совет: Чем четче фото, тем лучше результат!\n\n"
-        f"👇 **Выберите язык для распознавания:**",
+        f"📸 **Отправьте фото с текстом**\n\n"
+        f"👇 **Или настройте параметры:**",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
     await callback.answer()
 
-@dp.callback_query(lambda c: c.data.startswith('ocr_lang_'))
-async def process_ocr_lang(callback: types.CallbackQuery, state: FSMContext):
-    """Выбор языка для OCR"""
+@dp.callback_query(lambda c: c.data == "ocr_settings")
+async def show_ocr_settings_menu(callback: types.CallbackQuery, state: FSMContext):
+    """Показывает меню настроек OCR"""
+    await state.set_state(BotStates.ocr_settings)
     user_id = callback.from_user.id
-    lang_code = callback.data.replace('ocr_lang_', '')
-    
-    if user_id not in user_settings:
-        user_settings[user_id] = {}
-    
-    user_settings[user_id]['ocr_lang'] = lang_code
-    lang_info = OCR_LANGUAGES[lang_code]
-    
-    # Обновляем клавиатуру
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-    for code, info in OCR_LANGUAGES.items():
-        marker = "✅ " if code == lang_code else ""
-        keyboard.inline_keyboard.append([
-            InlineKeyboardButton(
-                text=f"{marker}{info['name']}",
-                callback_data=f"ocr_lang_{code}"
-            )
-        ])
-    keyboard.inline_keyboard.append([
-        InlineKeyboardButton(text="◀️ В меню", callback_data="back_to_menu")
-    ])
-    
-    await callback.message.edit_text(
-        f"📷 **Режим распознавания текста**\n\n"
-        f"✅ Язык изменен на: {lang_info['name']}\n\n"
-        f"📸 Отправьте фото с текстом, и я распознаю его.\n\n"
-        f"👇 **Выберите язык для распознавания:**",
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
+    await show_ocr_settings(callback.message, user_id)
     await callback.answer()
 
-@dp.callback_query(lambda c: c.data == "back_to_menu")
-async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
-    """Возврат в главное меню"""
-    await state.set_state(BotStates.choosing_mode)
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔊 Озвучить текст", callback_data="mode_tts")],
-        [InlineKeyboardButton(text="📷 Распознать текст с фото", callback_data="mode_ocr")]
-    ])
-    
-    await callback.message.edit_text(
-        "👋 **Главное меню**\n\n"
-        "Выберите режим работы:",
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-    
-@dp.callback_query(lambda c: c.data == "noop")
-async def process_noop(callback: types.CallbackQuery):
-    """Заглушка для кнопок-заголовков"""
-    await callback.answer()
-    
-@dp.callback_query(lambda c: c.data == "back_to_tts")
-async def back_to_tts(callback: types.CallbackQuery, state: FSMContext):
-    """Возврат в режим TTS"""
-    await state.set_state(BotStates.tts_mode)
-    
-    user_id = callback.from_user.id
-    settings = user_settings.get(user_id, {})
-    accent = ACCENTS.get(settings.get('accent', 'us'), ACCENTS['us'])
-    
-    await callback.message.edit_text(
-        f"🔊 **Режим озвучки текста**\n\n"
-        f"Текущие настройки:\n"
-        f"• Акцент: {accent['flag']} {accent['description']}\n"
-        f"• Скорость: {SPEED_OPTIONS[settings.get('speed', '1.0')]['name']}\n"
-        f"• Формат: {AUDIO_FORMATS[settings.get('format', 'voice')]['name']}\n\n"
-        f"📝 Отправьте текст на английском, и я пришлю аудио.\n\n"
-        f"⚙️ Для изменения настроек используйте команды:\n"
-        f"/accent - выбрать акцент\n"
-        f"/speed - настроить скорость\n"
-        f"/format - выбрать формат\n"
-        f"/menu - вернуться в главное меню",
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-
-@dp.message(Command('menu'))
-async def cmd_menu(message: types.Message, state: FSMContext):
-    """Возврат в главное меню"""
-    await state.set_state(BotStates.choosing_mode)
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔊 Озвучить текст", callback_data="mode_tts")],
-        [InlineKeyboardButton(text="📷 Распознать текст с фото", callback_data="mode_ocr")]
-    ])
-    
-    await message.answer(
-        "👋 **Главное меню**\n\n"
-        "Выберите режим работы:",
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
-
-# Команды для режима озвучки
-@dp.message(Command('accent'))
-async def cmd_accent(message: types.Message, state: FSMContext):
+@dp.callback_query(lambda c: c.data == "choose_accent")
+async def choose_accent(callback: types.CallbackQuery, state: FSMContext):
     """Выбор акцента"""
-    current_state = await state.get_state()
-    if current_state != BotStates.tts_mode:
-        await message.answer("Сначала выберите режим озвучки через /menu")
-        return
+    await state.set_state(BotStates.choosing_accent)
     
-    user_id = message.from_user.id
-    current_accent = user_settings.get(user_id, {}).get('accent', 'us')
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    current_accent = settings['accent']
     
     keyboard = []
-    row = []
     for code, accent in ACCENTS.items():
         marker = "✅ " if code == current_accent else ""
-        button = InlineKeyboardButton(
+        keyboard.append([InlineKeyboardButton(
             text=f"{marker}{accent['flag']} {accent['name']}",
-            callback_data=f"accent_{code}"
-        )
-        row.append(button)
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
+            callback_data=f"select_accent_{code}"
+        )])
+    
+    # Добавляем навигацию
+    keyboard.append([
+        InlineKeyboardButton(text="◀️ Назад", callback_data="tts_settings"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")
+    ])
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-    await message.answer("🌎 **Выберите акцент:**", reply_markup=markup, parse_mode="Markdown")
+    
+    await callback.message.edit_text(
+        "🌎 **Выберите акцент:**",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
 
-@dp.message(Command('speed'))
-async def cmd_speed(message: types.Message, state: FSMContext):
-    """Выбор скорости речи с группировкой по категориям"""
-    current_state = await state.get_state()
-    if current_state != BotStates.tts_mode:
-        await message.answer("Сначала выберите режим озвучки через /menu")
-        return
+@dp.callback_query(lambda c: c.data.startswith('select_accent_'))
+async def process_accent_selection(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка выбора акцента"""
+    user_id = callback.from_user.id
+    accent_code = callback.data.replace('select_accent_', '')
     
-    ffmpeg_ok = check_ffmpeg()
+    settings = get_user_settings(user_id)
+    settings['accent'] = accent_code
+    settings['voice'] = ACCENTS[accent_code]['default_voice']
     
-    if not ffmpeg_ok:
-        await message.answer(
-            "⚠️ **Функция изменения скорости недоступна**\n\n"
-            "FFmpeg не найден. Доступна только нормальная скорость.",
-            parse_mode="Markdown"
-        )
-        return
+    await callback.answer(f"Акцент изменен")
+    await state.set_state(BotStates.tts_settings)
+    await show_tts_settings(callback.message, user_id)
+
+@dp.callback_query(lambda c: c.data == "choose_voice")
+async def choose_voice(callback: types.CallbackQuery, state: FSMContext):
+    """Выбор голоса"""
+    await state.set_state(BotStates.choosing_voice)
     
-    user_id = message.from_user.id
-    current_speed = user_settings.get(user_id, {}).get('speed', '1.0')
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    accent_code = settings['accent']
     
-    # Создаем клавиатуру сгруппированную по категориям
+    if accent_code not in VOICES:
+        accent_code = 'us'
+    
+    voice_data = VOICES[accent_code]
+    current_voice = settings['voice']
+    
+    # Создаем клавиатуру с голосами
     keyboard = []
     
-    # Заголовок для медленных скоростей
-    keyboard.append([InlineKeyboardButton(text="🐢 МЕДЛЕННЫЕ", callback_data="noop")])
+    # Женские голоса
+    female_voices = [v for v in voice_data['voices'] if v['gender'] == 'female']
+    if female_voices:
+        keyboard.append([InlineKeyboardButton(text="👩 ЖЕНСКИЕ ГОЛОСА", callback_data="noop")])
+        for voice in female_voices:
+            marker = "✅ " if voice['id'] == current_voice else ""
+            button_text = f"{marker}{voice['name']}"
+            keyboard.append([InlineKeyboardButton(text=button_text, callback_data=f"select_voice_{voice['id']}")])
     
-    # Медленные скорости (по 3 в ряд)
-    slow_row = []
+    # Мужские голоса
+    male_voices = [v for v in voice_data['voices'] if v['gender'] == 'male']
+    if male_voices:
+        keyboard.append([InlineKeyboardButton(text="👨 МУЖСКИЕ ГОЛОСА", callback_data="noop")])
+        for voice in male_voices:
+            marker = "✅ " if voice['id'] == current_voice else ""
+            button_text = f"{marker}{voice['name']}"
+            keyboard.append([InlineKeyboardButton(text=button_text, callback_data=f"select_voice_{voice['id']}")])
+    
+    # Навигация
+    keyboard.append([
+        InlineKeyboardButton(text="◀️ Назад", callback_data="tts_settings"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")
+    ])
+    
+    markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+    
+    await callback.message.edit_text(
+        f"🎤 **Выберите голос для {VOICES[accent_code]['name']}**\n\n"
+        f"Всего доступно: {len(voice_data['voices'])} голосов",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith('select_voice_'))
+async def process_voice_selection(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка выбора голоса"""
+    user_id = callback.from_user.id
+    voice_id = callback.data.replace('select_voice_', '')
+    
+    settings = get_user_settings(user_id)
+    settings['voice'] = voice_id
+    
+    # Обновляем акцент в соответствии с голосом
+    for accent_code, voice_data in VOICES.items():
+        for v in voice_data['voices']:
+            if v['id'] == voice_id:
+                settings['accent'] = accent_code
+                break
+    
+    await callback.answer(f"Голос выбран")
+    await state.set_state(BotStates.tts_settings)
+    await show_tts_settings(callback.message, user_id)
+
+@dp.callback_query(lambda c: c.data == "choose_speed")
+async def choose_speed(callback: types.CallbackQuery, state: FSMContext):
+    """Выбор скорости"""
+    await state.set_state(BotStates.choosing_speed)
+    
+    if not check_ffmpeg():
+        keyboard = get_navigation_keyboard(back_callback="tts_settings", show_main_menu=True)
+        await callback.message.edit_text(
+            "⚠️ **Функция изменения скорости недоступна**\n\n"
+            "FFmpeg не найден. Доступна только нормальная скорость.",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        await callback.answer()
+        return
+    
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    current_speed = settings['speed']
+    
+    keyboard = []
+    
+    # Медленные скорости
+    keyboard.append([InlineKeyboardButton(text="🐢 МЕДЛЕННЫЕ", callback_data="noop")])
     for speed_code, speed_info in SPEED_OPTIONS.items():
         if speed_info.get('group') == 'slow':
             marker = "✅ " if speed_code == current_speed else ""
-            button = InlineKeyboardButton(
-                text=f"{marker}{speed_info['name'].replace('🐢 ', '')}",
-                callback_data=f"speed_{speed_code}"
-            )
-            slow_row.append(button)
-            if len(slow_row) == 3:
-                keyboard.append(slow_row)
-                slow_row = []
-    if slow_row:
-        keyboard.append(slow_row)
+            keyboard.append([InlineKeyboardButton(
+                text=f"{marker}{speed_info['name']}",
+                callback_data=f"select_speed_{speed_code}"
+            )])
     
     # Нормальная скорость
     keyboard.append([InlineKeyboardButton(text="⏺️ НОРМАЛЬНАЯ", callback_data="noop")])
     for speed_code, speed_info in SPEED_OPTIONS.items():
         if speed_info.get('group') == 'normal':
             marker = "✅ " if speed_code == current_speed else ""
-            keyboard.append([
-                InlineKeyboardButton(
-                    text=f"{marker}{speed_info['name'].replace('⏺️ ', '')}",
-                    callback_data=f"speed_{speed_code}"
-                )
-            ])
+            keyboard.append([InlineKeyboardButton(
+                text=f"{marker}{speed_info['name']}",
+                callback_data=f"select_speed_{speed_code}"
+            )])
     
     # Быстрые скорости
     keyboard.append([InlineKeyboardButton(text="⚡ БЫСТРЫЕ", callback_data="noop")])
-    fast_row = []
     for speed_code, speed_info in SPEED_OPTIONS.items():
         if speed_info.get('group') == 'fast':
             marker = "✅ " if speed_code == current_speed else ""
-            # Убираем эмодзи из текста для компактности
-            clean_name = speed_info['name'].replace('⚡ ', '').replace('🚀 ', '').replace('💨 ', '')
-            button = InlineKeyboardButton(
-                text=f"{marker}{clean_name}",
-                callback_data=f"speed_{speed_code}"
-            )
-            fast_row.append(button)
-            if len(fast_row) == 3:
-                keyboard.append(fast_row)
-                fast_row = []
-    if fast_row:
-        keyboard.append(fast_row)
+            keyboard.append([InlineKeyboardButton(
+                text=f"{marker}{speed_info['name']}",
+                callback_data=f"select_speed_{speed_code}"
+            )])
     
-    # Кнопка возврата
-    keyboard.append([InlineKeyboardButton(text="◀️ Назад к настройкам", callback_data="back_to_tts")])
+    # Навигация
+    keyboard.append([
+        InlineKeyboardButton(text="◀️ Назад", callback_data="tts_settings"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")
+    ])
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
     
-    await message.answer(
-        "⚡ **Выберите скорость речи:**\n"
-        "(шаг 0.1x от 0.5x до 2.0x, без искажения тона)",
+    await callback.message.edit_text(
+        "⚡ **Выберите скорость речи:**",
         reply_markup=markup,
         parse_mode="Markdown"
     )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith('select_speed_'))
+async def process_speed_selection(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка выбора скорости"""
+    user_id = callback.from_user.id
+    speed_code = callback.data.replace('select_speed_', '')
     
-@dp.message(Command('format'))
-async def cmd_format(message: types.Message, state: FSMContext):
+    settings = get_user_settings(user_id)
+    settings['speed'] = speed_code
+    
+    await callback.answer(f"Скорость изменена")
+    await state.set_state(BotStates.tts_settings)
+    await show_tts_settings(callback.message, user_id)
+
+@dp.callback_query(lambda c: c.data == "choose_format")
+async def choose_format(callback: types.CallbackQuery, state: FSMContext):
     """Выбор формата"""
-    current_state = await state.get_state()
-    if current_state != BotStates.tts_mode:
-        await message.answer("Сначала выберите режим озвучки через /menu")
-        return
+    await state.set_state(BotStates.choosing_format)
     
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    current_format = settings['format']
     ffmpeg_ok = check_ffmpeg()
-    user_id = message.from_user.id
-    current_format = user_settings.get(user_id, {}).get('format', 'voice')
     
     keyboard = []
-    row = []
     for format_code, format_info in AUDIO_FORMATS.items():
         if not ffmpeg_ok and format_code not in ['voice', 'mp3']:
             continue
         marker = "✅ " if format_code == current_format else ""
-        button = InlineKeyboardButton(
+        keyboard.append([InlineKeyboardButton(
             text=f"{marker}{format_info['name']}",
-            callback_data=f"format_{format_code}"
-        )
-        row.append(button)
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
+            callback_data=f"select_format_{format_code}"
+        )])
+    
+    # Навигация
+    keyboard.append([
+        InlineKeyboardButton(text="◀️ Назад", callback_data="tts_settings"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")
+    ])
     
     markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-    await message.answer("📁 **Выберите формат:**", reply_markup=markup, parse_mode="Markdown")
     
-@dp.message(Command('settings'))
-async def cmd_settings(message: types.Message, state: FSMContext):
-    """Показать текущие настройки"""
-    user_id = message.from_user.id
+    await callback.message.edit_text(
+        "📁 **Выберите формат:**",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith('select_format_'))
+async def process_format_selection(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка выбора формата"""
+    user_id = callback.from_user.id
+    format_code = callback.data.replace('select_format_', '')
     
-    # Настройки по умолчанию, если нет
-    if user_id not in user_settings:
-        user_settings[user_id] = {
-            'accent': 'us',
-            'speed': '1.0',
-            'format': 'voice',
-            'ocr_lang': 'eng'
-        }
+    settings = get_user_settings(user_id)
+    settings['format'] = format_code
     
-    settings = user_settings[user_id]
+    await callback.answer(f"Формат изменен")
+    await state.set_state(BotStates.tts_settings)
+    await show_tts_settings(callback.message, user_id)
+
+@dp.callback_query(lambda c: c.data == "choose_ocr_lang")
+async def choose_ocr_lang(callback: types.CallbackQuery, state: FSMContext):
+    """Выбор языка для OCR"""
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    current_lang = settings['ocr_lang']
+    
+    keyboard = []
+    for lang_code, lang_info in OCR_LANGUAGES.items():
+        marker = "✅ " if lang_code == current_lang else ""
+        keyboard.append([InlineKeyboardButton(
+            text=f"{marker}{lang_info['name']}",
+            callback_data=f"select_ocr_lang_{lang_code}"
+        )])
+    
+    # Навигация
+    keyboard.append([
+        InlineKeyboardButton(text="◀️ Назад", callback_data="ocr_settings"),
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")
+    ])
+    
+    markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+    
+    await callback.message.edit_text(
+        "🔤 **Выберите язык для распознавания:**",
+        reply_markup=markup,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data.startswith('select_ocr_lang_'))
+async def process_ocr_lang_selection(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка выбора языка OCR"""
+    user_id = callback.from_user.id
+    lang_code = callback.data.replace('select_ocr_lang_', '')
+    
+    settings = get_user_settings(user_id)
+    settings['ocr_lang'] = lang_code
+    
+    await callback.answer(f"Язык изменен")
+    await show_ocr_settings(callback.message, user_id)
+
+@dp.callback_query(lambda c: c.data == "back_to_tts")
+async def back_to_tts(callback: types.CallbackQuery, state: FSMContext):
+    """Возврат в режим TTS"""
+    await state.set_state(BotStates.tts_mode)
+    await process_tts_mode(callback, state)
+
+@dp.callback_query(lambda c: c.data == "back_to_ocr")
+async def back_to_ocr(callback: types.CallbackQuery, state: FSMContext):
+    """Возврат в режим OCR"""
+    await state.set_state(BotStates.ocr_mode)
+    await process_ocr_mode(callback, state)
+
+@dp.callback_query(lambda c: c.data == "back_to_menu")
+async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
+    """Возврат в главное меню"""
+    await show_main_menu(callback.message, state)
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "show_settings")
+async def show_settings(callback: types.CallbackQuery, state: FSMContext):
+    """Показывает общие настройки"""
+    user_id = callback.from_user.id
+    settings = get_user_settings(user_id)
+    
     accent_info = ACCENTS[settings['accent']]
     speed_info = SPEED_OPTIONS[settings['speed']]
     format_info = AUDIO_FORMATS[settings['format']]
+    ocr_lang = OCR_LANGUAGES[settings['ocr_lang']]
     
-    # Проверяем текущий режим
-    current_state = await state.get_state()
-    
-    # Добавляем информацию о языке OCR если в режиме OCR
-    ocr_info = ""
-    if current_state == BotStates.ocr_mode:
-        ocr_lang = OCR_LANGUAGES.get(settings.get('ocr_lang', 'eng'), OCR_LANGUAGES['eng'])
-        ocr_info = f"🔤 Язык OCR: {ocr_lang['name']}\n"
-    
-    mode_info = ""
-    if current_state == BotStates.tts_mode:
-        mode_info = "🔊 **Режим озвучки текста**\n\n"
-    elif current_state == BotStates.ocr_mode:
-        mode_info = "📷 **Режим распознавания текста**\n\n"
-    else:
-        mode_info = "👋 **Главное меню**\n\n"
+    # Находим информацию о голосе
+    voice_info = "неизвестно"
+    for accent_code, voice_data in VOICES.items():
+        for v in voice_data['voices']:
+            if v['id'] == settings['voice']:
+                voice_info = v['name']
+                break
     
     text = (
-        f"{mode_info}"
         f"⚙️ **Текущие настройки:**\n\n"
-        f"🎤 Акцент: {accent_info['flag']} {accent_info['description']}\n"
-        f"⚡ Скорость: {speed_info['name']}\n"
-        f"📁 Формат: {format_info['name']}\n"
-        f"{ocr_info}\n"
-        f"📝 **Доступные команды:**\n"
-        f"/accent - изменить акцент\n"
-        f"/speed - изменить скорость\n"
-        f"/format - изменить формат\n"
-        f"/menu - вернуться в главное меню"
+        f"🔊 **Озвучка:**\n"
+        f"• Акцент: {accent_info['flag']} {accent_info['description']}\n"
+        f"• Голос: {voice_info}\n"
+        f"• Скорость: {speed_info['name']}\n"
+        f"• Формат: {format_info['name']}\n\n"
+        f"📷 **OCR:**\n"
+        f"• Язык: {ocr_lang['name']}\n\n"
+        f"👇 **Выберите режим для настройки:**"
     )
     
-    await message.answer(text, parse_mode="Markdown")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔊 Настройки озвучки", callback_data="tts_settings")],
+        [InlineKeyboardButton(text="📷 Настройки OCR", callback_data="ocr_settings")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await callback.answer()
 
-# Обработчики callback'ов
-@dp.callback_query(lambda c: c.data.startswith('accent_'))
-async def process_accent(callback: types.CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    accent_code = callback.data.replace('accent_', '')
-    
-    if user_id not in user_settings:
-        user_settings[user_id] = {}
-    
-    user_settings[user_id]['accent'] = accent_code
-    accent_info = ACCENTS[accent_code]
-    
-    await callback.answer(f"Выбран акцент: {accent_info['name']}")
-    await callback.message.edit_text(
-        f"✅ Акцент изменен на {accent_info['flag']} {accent_info['description']}\n\n"
-        f"Продолжайте отправлять текст для озвучки."
-    )
+@dp.callback_query(lambda c: c.data == "noop")
+async def process_noop(callback: types.CallbackQuery):
+    """Заглушка для кнопок-заголовков"""
+    await callback.answer()
 
-@dp.callback_query(lambda c: c.data.startswith('speed_'))
-async def process_speed(callback: types.CallbackQuery):
-    """Обработка выбора скорости"""
-    if not check_ffmpeg():
-        await callback.answer("❌ FFmpeg не найден, скорость изменить нельзя", show_alert=True)
-        return
-        
-    user_id = callback.from_user.id
-    speed_code = callback.data.replace('speed_', '')
-    
-    if user_id not in user_settings:
-        user_settings[user_id] = {}
-    
-    user_settings[user_id]['speed'] = speed_code
-    speed_info = SPEED_OPTIONS[speed_code]
-    
-    await callback.answer(f"Выбрана скорость: {speed_info['name']}")
-    
-    # Показываем обновленные настройки
-    settings = user_settings[user_id]
-    accent = ACCENTS.get(settings.get('accent', 'us'), ACCENTS['us'])
-    
-    await callback.message.edit_text(
-        f"🔊 **Режим озвучки текста**\n\n"
-        f"✅ Скорость изменена на: {speed_info['name']}\n\n"
-        f"Текущие настройки:\n"
-        f"• Акцент: {accent['flag']} {accent['description']}\n"
-        f"• Скорость: {SPEED_OPTIONS[settings.get('speed', '1.0')]['name']}\n"
-        f"• Формат: {AUDIO_FORMATS[settings.get('format', 'voice')]['name']}\n\n"
-        f"📝 Отправьте текст для озвучки или используйте команды:\n"
-        f"/accent - изменить акцент\n"
-        f"/speed - изменить скорость\n"
-        f"/format - изменить формат",
-        parse_mode="Markdown"
-    )
-
-@dp.callback_query(lambda c: c.data.startswith('format_'))
-async def process_format(callback: types.CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    format_code = callback.data.replace('format_', '')
-    
-    if user_id not in user_settings:
-        user_settings[user_id] = {}
-    
-    user_settings[user_id]['format'] = format_code
-    format_info = AUDIO_FORMATS[format_code]
-    
-    await callback.answer(f"Выбран формат: {format_info['name']}")
-    await callback.message.edit_text(
-        f"✅ Формат изменен на: {format_info['name']}\n\n"
-        f"Продолжайте отправлять текст для озвучки."
-    )
+@dp.message(Command('menu'))
+async def cmd_menu(message: types.Message, state: FSMContext):
+    """Возврат в главное меню"""
+    await show_main_menu(message, state)
 
 # Обработчик текста в режиме озвучки
 @dp.message(BotStates.tts_mode)
@@ -791,44 +953,58 @@ async def handle_tts_text(message: types.Message, state: FSMContext):
         return
     
     user_id = message.from_user.id
-    settings = user_settings.get(user_id, {
-        'accent': 'us',
-        'speed': '1.0',
-        'format': 'voice'
-    })
+    settings = get_user_settings(user_id)
     
     accent_info = ACCENTS[settings['accent']]
+    voice_id = settings['voice']
+    
+    # Находим информацию о голосе
+    voice_name = "выбранный голос"
+    for accent_code, voice_data in VOICES.items():
+        for v in voice_data['voices']:
+            if v['id'] == voice_id:
+                voice_name = v['name']
+                break
     
     await bot.send_chat_action(message.chat.id, action="record_voice")
     
     try:
-        filename = generate_speech(
-            message.text,
-            accent_info['tld'],
+        status_msg = await message.answer(f"🔄 Генерирую речь голосом {voice_name}...")
+        
+        filename = await generate_speech_edge(
+            message.text, 
+            voice_id, 
             settings['speed']
         )
         
+        await status_msg.edit_text("🔄 Конвертирую в нужный формат...")
+        
         final_file = filename
-        if check_ffmpeg() and settings['format'] != 'mp3':
+        if settings['format'] != 'mp3' and check_ffmpeg():
             final_file = convert_audio(filename, settings['format'], '1.0')
         
         audio_file = FSInputFile(final_file)
         
-        if settings['format'] == 'voice' or not check_ffmpeg():
+        await status_msg.delete()
+        
+        if settings['format'] == 'voice':
             await message.answer_voice(
                 audio_file,
-                caption=f"{accent_info['flag']} {accent_info['description']}"
+                caption=f"{accent_info['flag']} {voice_name}"
             )
         else:
+            format_name = AUDIO_FORMATS[settings['format']]['name']
             await message.answer_audio(
                 audio_file,
-                caption=f"{accent_info['flag']} {accent_info['description']}"
+                caption=f"{accent_info['flag']} {voice_name} ({format_name})"
             )
         
-        if os.path.exists(final_file):
-            os.unlink(final_file)
+        for f in [filename, final_file]:
+            if os.path.exists(f) and f != filename:
+                os.unlink(f)
         
     except Exception as e:
+        logger.error(f"Ошибка генерации речи: {e}")
         await message.answer(f"❌ Ошибка: {e}")
 
 # Обработчик фото в режиме OCR
@@ -839,40 +1015,33 @@ async def handle_ocr_photo(message: types.Message, state: FSMContext):
         return
     
     user_id = message.from_user.id
-    settings = user_settings.get(user_id, {'ocr_lang': 'eng'})
-    lang_code = settings.get('ocr_lang', 'eng')
-    lang_info = OCR_LANGUAGES[lang_code]
+    settings = get_user_settings(user_id)
+    lang_info = OCR_LANGUAGES[settings['ocr_lang']]
     
     await bot.send_chat_action(message.chat.id, action="typing")
     
     try:
-        # Получаем фото максимального размера
         photo = message.photo[-1]
         
-        # Отправляем статус
         status_msg = await message.answer("🔄 Скачиваю изображение...")
         
-        # Скачиваем фото
         image_path = await download_file(photo.file_id)
         
         await status_msg.edit_text("🔄 Распознаю текст...")
         
-        # Распознаем текст
         recognized_text = ocr_image(image_path, lang_info['tesseract_code'])
         
-        # Отправляем результат
+        await status_msg.delete()
+        
         if recognized_text.startswith("❌"):
             await message.answer(recognized_text)
         else:
-            # Разбиваем длинный текст на части
             if len(recognized_text) > 4000:
                 parts = [recognized_text[i:i+4000] for i in range(0, len(recognized_text), 4000)]
                 for i, part in enumerate(parts, 1):
                     await message.answer(f"📝 **Распознанный текст (часть {i}/{len(parts)}):**\n```\n{part}\n```", parse_mode="Markdown")
             else:
                 await message.answer(f"📝 **Распознанный текст:**\n```\n{recognized_text}\n```", parse_mode="Markdown")
-        
-        await status_msg.delete()
         
     except Exception as e:
         await message.answer(f"❌ Ошибка: {e}")
@@ -893,13 +1062,16 @@ async def handle_unknown(message: types.Message, state: FSMContext):
     elif current_state == BotStates.ocr_mode:
         await message.answer("Пожалуйста, отправьте фото с текстом!")
     else:
-        await message.answer("Используйте кнопки меню для выбора действия.")
+        keyboard = get_navigation_keyboard(back_callback="back_to_menu", show_main_menu=False)
+        await message.answer(
+            "❓ Неизвестная команда. Используйте кнопки навигации.",
+            reply_markup=keyboard
+        )
 
 async def main():
     """Запуск бота"""
     logger.info("🚀 Бот запускается...")
     
-    # Проверяем компоненты
     if check_ffmpeg():
         logger.info("✅ FFmpeg доступен")
     else:
