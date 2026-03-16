@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 API_TOKEN = '8627063543:AAHvc33DfNFjcVT--sKfgHsCVyemY72fQ7Q'
 
 # Путь к Tesseract (нужно установить!)
-TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"  # Для Windows
+TESSERACT_PATH = '/usr/bin/tesseract'
 
 # Устанавливаем путь к Tesseract
 pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
@@ -34,7 +34,7 @@ bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=storage)
 
 # Путь к ffmpeg
-FFMPEG_PATH = r"C:\Users\anton\Downloads\dobro_loader\dobro_loader\bin\ffmpeg.exe"
+FFMPEG_PATH = '/usr/bin/ffmpeg'
 
 # Состояния для FSM (Finite State Machine)
 class BotStates(StatesGroup):
