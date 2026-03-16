@@ -1,14 +1,11 @@
 services:
-  - type: worker
+  - type: web
     name: ocrtts-bot
     runtime: python
-    region: frankfurt  # или выберите ближайший к вам: frankfurt, oregon, singapore
+    region: frankfurt
     plan: free
     branch: main
-    buildCommand: |
-      apt-get update
-      apt-get install -y ffmpeg tesseract-ocr tesseract-ocr-rus
-      pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
     envVars:
       - key: BOT_TOKEN
