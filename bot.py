@@ -2,10 +2,6 @@ import edge_tts
 import os
 import tempfile
 import subprocess
-import pytesseract
-from PIL import Image
-import requests
-from io import BytesIO
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
@@ -14,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import logging
 import asyncio
+from aiohttp import web
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -22,27 +19,19 @@ logger = logging.getLogger(__name__)
 # Токен бота
 API_TOKEN = '8627063543:AAHvc33DfNFjcVT--sKfgHsCVyemY72fQ7Q'
 
-# Путь к Tesseract (нужно установить!)
-TESSERACT_PATH = '/usr/bin/tesseract'
-
-# Устанавливаем путь к Tesseract
-pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
-
 # Инициализация бота с хранилищем состояний
 storage = MemoryStorage()
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=storage)
 
-# Путь к ffmpeg
+# Путь к ffmpeg для Linux (на сервере)
 FFMPEG_PATH = '/usr/bin/ffmpeg'
 
 # Состояния для FSM (Finite State Machine)
 class BotStates(StatesGroup):
-    choosing_mode = State()  # Выбор режима (озвучка/распознавание)
+    choosing_mode = State()  # Выбор режима (теперь только озвучка)
     tts_mode = State()       # Режим озвучки текста
     tts_settings = State()   # Настройки озвучки
-    ocr_mode = State()       # Режим распознавания текста с фото
-    ocr_settings = State()   # Настройки OCR
     choosing_voice = State() # Выбор голоса
     choosing_accent = State() # Выбор акцента
     choosing_speed = State()  # Выбор скорости
@@ -128,25 +117,6 @@ ACCENTS = {
         'flag': '🇦🇺',
         'description': 'Австралийский английский',
         'default_voice': 'en-AU-NatashaNeural'
-    }
-}
-
-# Языки для OCR
-OCR_LANGUAGES = {
-    'eng': {
-        'name': '🇬🇧 Английский',
-        'code': 'eng',
-        'tesseract_code': 'eng'
-    },
-    'rus': {
-        'name': '🇷🇺 Русский',
-        'code': 'rus',
-        'tesseract_code': 'rus'
-    },
-    'eng+rus': {
-        'name': '🇬🇧+🇷🇺 Английский и русский',
-        'code': 'eng+rus',
-        'tesseract_code': 'eng+rus'
     }
 }
 
@@ -238,10 +208,6 @@ def get_user_settings(user_id: int) -> dict:
     if 'format' not in settings:
         settings['format'] = 'voice'
     
-    # Язык OCR по умолчанию
-    if 'ocr_lang' not in settings:
-        settings['ocr_lang'] = 'eng'
-    
     return settings
 
 # Функция для создания клавиатуры навигации
@@ -260,7 +226,7 @@ def get_navigation_keyboard(back_callback: str = "back_to_tts", show_main_menu: 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def check_ffmpeg():
-    """Проверяет наличие ffmpeg"""
+    """Проверяет наличие ffmpeg на Linux"""
     if os.path.exists(FFMPEG_PATH):
         try:
             result = subprocess.run([FFMPEG_PATH, '-version'], 
@@ -268,25 +234,10 @@ def check_ffmpeg():
                                   text=True, 
                                   timeout=5)
             if result.returncode == 0:
+                logger.info(f"✅ FFmpeg найден: {FFMPEG_PATH}")
                 return True
         except:
             pass
-    return False
-
-def check_tesseract():
-    """Проверяет наличие Tesseract"""
-    if os.path.exists(TESSERACT_PATH):
-        try:
-            result = subprocess.run([TESSERACT_PATH, '--version'], 
-                                  capture_output=True, 
-                                  text=True, 
-                                  timeout=5)
-            if result.returncode == 0:
-                logger.info(f"✅ Tesseract найден")
-                return True
-        except:
-            pass
-    logger.error(f"❌ Tesseract не найден по пути: {TESSERACT_PATH}")
     return False
 
 def convert_audio(input_file: str, output_format: str, speed_factor: str = '1.0') -> str:
@@ -364,33 +315,36 @@ async def download_file(file_id: str) -> str:
     await bot.download_file(file_path, destination)
     return destination
 
-def ocr_image(image_path: str, lang: str = 'eng') -> str:
-    """Распознает текст на изображении"""
+# Веб-сервер для health checks Render
+async def run_web_server():
+    """Запускает простой веб-сервер для health checks Render"""
+    app = web.Application()
+    
+    async def health_check(request):
+        return web.Response(text="Bot is running!")
+    
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    # Render ожидает порт из переменной PORT (по умолчанию 10000)
+    port = int(os.environ.get('PORT', 10000))
+    
     try:
-        # Открываем изображение
-        image = Image.open(image_path)
-        
-        # Конвертируем в RGB если нужно
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        # Распознаем текст
-        text = pytesseract.image_to_string(image, lang=lang)
-        
-        # Очищаем текст
-        text = text.strip()
-        if not text:
-            return "❌ Текст не найден на изображении"
-        
-        return text
-        
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', port)
+        await site.start()
+        logger.info(f"✅ Веб-сервер для health checks запущен на порту {port}")
     except Exception as e:
-        logger.error(f"Ошибка OCR: {e}")
-        return f"❌ Ошибка распознавания: {e}"
-    finally:
-        # Удаляем временный файл
-        if os.path.exists(image_path):
-            os.unlink(image_path)
+        logger.warning(f"⚠️ Не удалось запустить веб-сервер: {e}")
+        # Пробуем другой порт, если 10000 занят
+        try:
+            alt_port = 8080
+            site = web.TCPSite(runner, '0.0.0.0', alt_port)
+            await site.start()
+            logger.info(f"✅ Веб-сервер запущен на альтернативном порту {alt_port}")
+        except:
+            logger.warning("⚠️ Веб-сервер не запущен, но бот продолжит работу")
 
 # Функция для отображения главного меню
 async def show_main_menu(message: types.Message, state: FSMContext):
@@ -399,7 +353,6 @@ async def show_main_menu(message: types.Message, state: FSMContext):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔊 Озвучить текст", callback_data="mode_tts")],
-        [InlineKeyboardButton(text="📷 Распознать текст с фото", callback_data="mode_ocr")],
         [InlineKeyboardButton(text="⚙️ Настройки", callback_data="show_settings")]
     ])
     
@@ -446,26 +399,6 @@ async def show_tts_settings(message: types.Message, user_id: int):
         parse_mode="Markdown"
     )
 
-# Функция для отображения настроек OCR
-async def show_ocr_settings(message: types.Message, user_id: int):
-    """Показывает настройки OCR"""
-    settings = get_user_settings(user_id)
-    ocr_lang = OCR_LANGUAGES.get(settings['ocr_lang'], OCR_LANGUAGES['eng'])
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🔤 Язык: {ocr_lang['name']}", callback_data="choose_ocr_lang")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_ocr"),
-         InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
-    ])
-    
-    await message.answer(
-        f"📷 **Настройки распознавания текста**\n\n"
-        f"Текущий язык: {ocr_lang['name']}\n\n"
-        f"👇 **Выберите параметр для изменения:**",
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
-
 @dp.message(Command('start'))
 async def cmd_start(message: types.Message, state: FSMContext):
     """Обработчик команды /start"""
@@ -474,7 +407,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
     
     # Проверяем наличие компонентов
     ffmpeg_ok = check_ffmpeg()
-    tesseract_ok = check_tesseract()
     
     status_text = []
     if ffmpeg_ok:
@@ -482,18 +414,12 @@ async def cmd_start(message: types.Message, state: FSMContext):
     else:
         status_text.append("⚠️ FFmpeg: не найден (скорость и форматы ограничены)")
     
-    if tesseract_ok:
-        status_text.append("✅ Tesseract: доступен")
-    else:
-        status_text.append("⚠️ Tesseract: не найден (OCR недоступен)")
-    
     welcome_text = (
-        "👋 **Привет! Я многофункциональный бот!**\n\n"
+        "👋 **Привет! Я бот для озвучки текста!**\n\n"
         "📝 **Что я умею:**\n"
-        "1️⃣ **Озвучивать текст** - отправь текст, получу аудио\n"
-        "2️⃣ **Распознавать текст с фото** - отправь фото, получу текст\n\n"
+        "🔊 **Озвучивать текст** - отправь текст, получу аудио\n\n"
         f"🔧 **Статус:**\n" + "\n".join(status_text) + "\n\n"
-        "👇 **Выберите режим работы:**"
+        "👇 **Выберите действие:**"
     )
     
     await show_main_menu(message, state)
@@ -541,52 +467,6 @@ async def show_tts_settings_menu(callback: types.CallbackQuery, state: FSMContex
     await state.set_state(BotStates.tts_settings)
     user_id = callback.from_user.id
     await show_tts_settings(callback.message, user_id)
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "mode_ocr")
-async def process_ocr_mode(callback: types.CallbackQuery, state: FSMContext):
-    """Переход в режим OCR"""
-    if not check_tesseract():
-        keyboard = get_navigation_keyboard(back_callback="back_to_menu", show_main_menu=False)
-        await callback.message.edit_text(
-            "❌ **OCR недоступен**\n\n"
-            "Tesseract не установлен. Для работы OCR требуется:\n"
-            "1. Установить Tesseract с https://github.com/UB-Mannheim/tesseract/wiki\n"
-            "2. Установить языковые пакеты\n"
-            "3. Указать правильный путь в коде",
-            reply_markup=keyboard,
-            parse_mode="Markdown"
-        )
-        await callback.answer()
-        return
-    
-    await state.set_state(BotStates.ocr_mode)
-    
-    user_id = callback.from_user.id
-    settings = get_user_settings(user_id)
-    ocr_lang = OCR_LANGUAGES[settings['ocr_lang']]
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚙️ Настройки OCR", callback_data="ocr_settings")],
-        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
-    ])
-    
-    await callback.message.edit_text(
-        f"📷 **Режим распознавания текста**\n\n"
-        f"Текущий язык: {ocr_lang['name']}\n\n"
-        f"📸 **Отправьте фото с текстом**\n\n"
-        f"👇 **Или настройте параметры:**",
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "ocr_settings")
-async def show_ocr_settings_menu(callback: types.CallbackQuery, state: FSMContext):
-    """Показывает меню настроек OCR"""
-    await state.set_state(BotStates.ocr_settings)
-    user_id = callback.from_user.id
-    await show_ocr_settings(callback.message, user_id)
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "choose_accent")
@@ -835,59 +715,11 @@ async def process_format_selection(callback: types.CallbackQuery, state: FSMCont
     await state.set_state(BotStates.tts_settings)
     await show_tts_settings(callback.message, user_id)
 
-@dp.callback_query(lambda c: c.data == "choose_ocr_lang")
-async def choose_ocr_lang(callback: types.CallbackQuery, state: FSMContext):
-    """Выбор языка для OCR"""
-    user_id = callback.from_user.id
-    settings = get_user_settings(user_id)
-    current_lang = settings['ocr_lang']
-    
-    keyboard = []
-    for lang_code, lang_info in OCR_LANGUAGES.items():
-        marker = "✅ " if lang_code == current_lang else ""
-        keyboard.append([InlineKeyboardButton(
-            text=f"{marker}{lang_info['name']}",
-            callback_data=f"select_ocr_lang_{lang_code}"
-        )])
-    
-    # Навигация
-    keyboard.append([
-        InlineKeyboardButton(text="◀️ Назад", callback_data="ocr_settings"),
-        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")
-    ])
-    
-    markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-    
-    await callback.message.edit_text(
-        "🔤 **Выберите язык для распознавания:**",
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data.startswith('select_ocr_lang_'))
-async def process_ocr_lang_selection(callback: types.CallbackQuery, state: FSMContext):
-    """Обработка выбора языка OCR"""
-    user_id = callback.from_user.id
-    lang_code = callback.data.replace('select_ocr_lang_', '')
-    
-    settings = get_user_settings(user_id)
-    settings['ocr_lang'] = lang_code
-    
-    await callback.answer(f"Язык изменен")
-    await show_ocr_settings(callback.message, user_id)
-
 @dp.callback_query(lambda c: c.data == "back_to_tts")
 async def back_to_tts(callback: types.CallbackQuery, state: FSMContext):
     """Возврат в режим TTS"""
     await state.set_state(BotStates.tts_mode)
     await process_tts_mode(callback, state)
-
-@dp.callback_query(lambda c: c.data == "back_to_ocr")
-async def back_to_ocr(callback: types.CallbackQuery, state: FSMContext):
-    """Возврат в режим OCR"""
-    await state.set_state(BotStates.ocr_mode)
-    await process_ocr_mode(callback, state)
 
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
@@ -904,7 +736,6 @@ async def show_settings(callback: types.CallbackQuery, state: FSMContext):
     accent_info = ACCENTS[settings['accent']]
     speed_info = SPEED_OPTIONS[settings['speed']]
     format_info = AUDIO_FORMATS[settings['format']]
-    ocr_lang = OCR_LANGUAGES[settings['ocr_lang']]
     
     # Находим информацию о голосе
     voice_info = "неизвестно"
@@ -921,14 +752,11 @@ async def show_settings(callback: types.CallbackQuery, state: FSMContext):
         f"• Голос: {voice_info}\n"
         f"• Скорость: {speed_info['name']}\n"
         f"• Формат: {format_info['name']}\n\n"
-        f"📷 **OCR:**\n"
-        f"• Язык: {ocr_lang['name']}\n\n"
-        f"👇 **Выберите режим для настройки:**"
+        f"👇 **Выберите параметр для изменения:**"
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔊 Настройки озвучки", callback_data="tts_settings")],
-        [InlineKeyboardButton(text="📷 Настройки OCR", callback_data="ocr_settings")],
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
     ])
     
@@ -1007,46 +835,6 @@ async def handle_tts_text(message: types.Message, state: FSMContext):
         logger.error(f"Ошибка генерации речи: {e}")
         await message.answer(f"❌ Ошибка: {e}")
 
-# Обработчик фото в режиме OCR
-@dp.message(BotStates.ocr_mode)
-async def handle_ocr_photo(message: types.Message, state: FSMContext):
-    if not message.photo:
-        await message.answer("Пожалуйста, отправьте фото с текстом!")
-        return
-    
-    user_id = message.from_user.id
-    settings = get_user_settings(user_id)
-    lang_info = OCR_LANGUAGES[settings['ocr_lang']]
-    
-    await bot.send_chat_action(message.chat.id, action="typing")
-    
-    try:
-        photo = message.photo[-1]
-        
-        status_msg = await message.answer("🔄 Скачиваю изображение...")
-        
-        image_path = await download_file(photo.file_id)
-        
-        await status_msg.edit_text("🔄 Распознаю текст...")
-        
-        recognized_text = ocr_image(image_path, lang_info['tesseract_code'])
-        
-        await status_msg.delete()
-        
-        if recognized_text.startswith("❌"):
-            await message.answer(recognized_text)
-        else:
-            if len(recognized_text) > 4000:
-                parts = [recognized_text[i:i+4000] for i in range(0, len(recognized_text), 4000)]
-                for i, part in enumerate(parts, 1):
-                    await message.answer(f"📝 **Распознанный текст (часть {i}/{len(parts)}):**\n```\n{part}\n```", parse_mode="Markdown")
-            else:
-                await message.answer(f"📝 **Распознанный текст:**\n```\n{recognized_text}\n```", parse_mode="Markdown")
-        
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
-        logger.error(f"OCR error: {e}")
-
 # Обработчик для непонятных сообщений
 @dp.message()
 async def handle_unknown(message: types.Message, state: FSMContext):
@@ -1059,8 +847,6 @@ async def handle_unknown(message: types.Message, state: FSMContext):
         )
     elif current_state == BotStates.tts_mode:
         await message.answer("Пожалуйста, отправьте текст для озвучки!")
-    elif current_state == BotStates.ocr_mode:
-        await message.answer("Пожалуйста, отправьте фото с текстом!")
     else:
         keyboard = get_navigation_keyboard(back_callback="back_to_menu", show_main_menu=False)
         await message.answer(
@@ -1072,15 +858,13 @@ async def main():
     """Запуск бота"""
     logger.info("🚀 Бот запускается...")
     
+    # Запускаем веб-сервер для Render
+    asyncio.create_task(run_web_server())
+    
     if check_ffmpeg():
         logger.info("✅ FFmpeg доступен")
     else:
         logger.warning("⚠️ FFmpeg не найден")
-    
-    if check_tesseract():
-        logger.info("✅ Tesseract доступен")
-    else:
-        logger.warning("⚠️ Tesseract не найден - OCR будет недоступен")
     
     await dp.start_polling(bot)
 
