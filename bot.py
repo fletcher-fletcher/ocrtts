@@ -358,7 +358,7 @@ async def show_main_menu(message: types.Message, state: FSMContext):
     
     await message.answer(
         "👋 **Главное меню**\n\n"
-        "Выберите режим работы:",
+        "Я озвучу ваш текст на английском языке! В настройках вы можете выбрать акцент, голос, темп речи и формат аудио",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
