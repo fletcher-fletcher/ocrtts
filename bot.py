@@ -17,7 +17,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Токен бота
-API_TOKEN = '8627063543:AAHvc33DfNFjcVT--sKfgHsCVyemY72fQ7Q'
+API_TOKEN = os.getenv('BOT_TOKEN')
+if not API_TOKEN:
+    raise ValueError("BOT_TOKEN не найден в переменных окружения!")
 
 # Инициализация бота с хранилищем состояний
 storage = MemoryStorage()
